@@ -22,17 +22,57 @@ function pool(): Pool {
     _pool = new Pool({
       connectionString: url,
       ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined,
-      max: 10,
-      idleTimeoutMillis: 30_000,
+      max: 5,
+      idleTimeoutMillis: 60_000,       // keep connections alive longer
+      connectionTimeoutMillis: 10_000, // fail fast if Neon is waking up
+    });
+    // Reset pool reference on any pool error so next request gets a fresh pool
+    _pool.on("error", () => {
+      _pool = null;
+      _ready = false;
     });
   }
   return _pool;
 }
 
+// Retry a DB operation once if the connection was dead (Neon auto-suspend recovery)
+async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err: unknown) {
+    const msg = String(err);
+    const isConnectionDrop =
+      msg.includes("ECONNRESET") ||
+      msg.includes("connection terminated") ||
+      msg.includes("Connection terminated") ||
+      msg.includes("timeout");
+    if (isConnectionDrop) {
+      _pool = null;
+      _ready = false;
+      await new Promise((r) => setTimeout(r, 800)); // wait for Neon to wake
+      return fn(); // one retry
+    }
+    throw err;
+  }
+}
+
+// Proxy that wraps every .query() call with withRetry
+function resilientPool(p: Pool): Pool {
+  return new Proxy(p, {
+    get(target, prop) {
+      if (prop === "query") {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return (...args: any[]) => withRetry(() => (target.query as any)(...args));
+      }
+      return Reflect.get(target, prop);
+    },
+  }) as Pool;
+}
+
 let _ready = false;
 async function db(): Promise<Pool> {
   if (!_ready) {
-    await pool().query(`
+    await withRetry(() => pool().query(`
       CREATE TABLE IF NOT EXISTS users (
         id          TEXT PRIMARY KEY,
         username    TEXT NOT NULL,
@@ -74,10 +114,10 @@ async function db(): Promise<Pool> {
         chunk_sha256  TEXT,
         PRIMARY KEY (file_id, chunk_index)
       );
-    `);
+    `));
     _ready = true;
   }
-  return pool();
+  return resilientPool(pool());
 }
 
 // ── User & Session ─────────────────────────────────────────────────────────────

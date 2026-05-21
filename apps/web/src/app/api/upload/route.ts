@@ -11,9 +11,10 @@ import { customAlphabet } from "nanoid";
 
 const nanoid = customAlphabet("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", 10);
 
-// Use 4 concurrent uploads per vault channel, capped at Discord's global limit of 50 req/s
+// 3 concurrent uploads per vault channel, capped at 24 to stay well under Discord's 50 req/s global limit
+// Conservative on free hosting — avoids rate limit cascades between back-to-back uploads
 function getConcurrency(channelCount: number): number {
-  return Math.min(channelCount * 4, 40);
+  return Math.min(channelCount * 3, 24);
 }
 
 export const dynamic = "force-dynamic";
