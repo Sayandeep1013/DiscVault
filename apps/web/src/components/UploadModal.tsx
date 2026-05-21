@@ -3,6 +3,16 @@
 import { useCallback, useRef, useState } from "react";
 import { formatBytes } from "@/lib/format";
 
+const CHUNK_SIZE = 9 * 1024 * 1024; // 9 MB
+
+interface UploadedChunkInfo {
+  index: number;
+  messageId: string;
+  channelId: string;
+  guildId: string;
+  chunkSha256: string;
+}
+
 interface FileUploadJob {
   id: string;
   file: File;
@@ -22,6 +32,12 @@ interface UploadModalProps {
 
 let jobCounter = 0;
 
+function hexFromBuffer(buf: ArrayBuffer): string {
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 export default function UploadModal({ onClose, onDone }: UploadModalProps) {
   const [phase, setPhase] = useState<"pick" | "uploading" | "allDone">("pick");
   const [jobs, setJobs] = useState<FileUploadJob[]>([]);
@@ -34,63 +50,84 @@ export default function UploadModal({ onClose, onDone }: UploadModalProps) {
   const uploadOne = useCallback(async (job: FileUploadJob) => {
     updateJob(job.id, { status: "uploading", startedAt: Date.now() });
 
-    // Abort automatically if server doesn't respond within 15 seconds
-    const timeoutId = setTimeout(() => abortRef.current?.abort(), 15_000);
+    const file = job.file;
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+
+    // Generate a unique file ID on the client
+    const fileId =
+      "vv_" +
+      Array.from(crypto.getRandomValues(new Uint8Array(7)))
+        .map((b) => "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"[b % 62])
+        .join("");
+
+    updateJob(job.id, { total: totalChunks });
+
+    const uploadedChunks: UploadedChunkInfo[] = [];
 
     try {
-      const res = await fetch("/api/upload", {
+      for (let i = 0; i < totalChunks; i++) {
+        if (abortRef.current?.signal.aborted) throw new Error("Cancelled");
+
+        const start = i * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, file.size);
+        // File.slice does NOT load the whole file — reads only this 9MB window
+        const chunkBuf = await file.slice(start, end).arrayBuffer();
+
+        // Per-chunk SHA-256 using built-in WebCrypto
+        const sha256Buf = await crypto.subtle.digest("SHA-256", chunkBuf);
+        const chunkSha256 = hexFromBuffer(sha256Buf);
+
+        // Each chunk is a small, independent POST — no HTTP/2 streaming body issues
+        const res = await fetch("/api/upload/chunk", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/octet-stream",
+            "x-file-id": fileId,
+            "x-chunk-index": String(i),
+            "x-filename": encodeURIComponent(file.name),
+          },
+          body: chunkBuf,
+        });
+
+        if (!res.ok) {
+          const err = await res.json() as { error?: string };
+          throw new Error(err.error ?? `Chunk ${i} upload failed (HTTP ${res.status})`);
+        }
+
+        const data = await res.json() as { messageId: string; channelId: string; guildId: string };
+        uploadedChunks.push({ index: i, ...data, chunkSha256 });
+
+        updateJob(job.id, {
+          chunk: i + 1,
+          total: totalChunks,
+          bytes: end,
+        });
+      }
+
+      // Finalize — save manifest in DB and post to Discord
+      const finalRes = await fetch("/api/upload/finalize", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/octet-stream",
-          "x-filename": encodeURIComponent(job.file.name),
-          "x-title": encodeURIComponent(job.file.name),
-          "Content-Length": String(job.file.size),
-        },
-        body: job.file,
-        // @ts-expect-error duplex needed for streaming body
-        duplex: "half",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fileId,
+          filename: file.name,
+          title: file.name,
+          size: file.size,
+          chunks: uploadedChunks,
+        }),
       });
 
-      if (!res.body) throw new Error("No response stream");
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const parts = buf.split("\n\n");
-        buf = parts.pop() ?? "";
-        for (const part of parts) {
-          if (!part.startsWith("data: ")) continue;
-          const ev = JSON.parse(part.slice(6)) as Record<string, unknown>;
-          if (ev["type"] === "heartbeat") {
-            // Server acknowledged the request — chunking is starting
-            updateJob(job.id, { status: "uploading" });
-          } else if (ev["type"] === "progress") {
-            updateJob(job.id, {
-              chunk: Number(ev["chunk"]),
-              total: Number(ev["total"]) > 0 ? Number(ev["total"]) : job.total,
-              bytes: Number(ev["bytes"]) || 0,
-            });
-          } else if (ev["type"] === "done") {
-            updateJob(job.id, { status: "done", fileId: String(ev["fileId"]), bytes: job.file.size });
-          } else if (ev["type"] === "error") {
-            updateJob(job.id, { status: "error", error: String(ev["message"]) });
-          }
-        }
+      if (!finalRes.ok) {
+        const err = await finalRes.json() as { error?: string };
+        throw new Error(err.error ?? "Failed to save manifest");
       }
+
+      updateJob(job.id, { status: "done", fileId, bytes: file.size });
     } catch (err) {
-      const isTimeout = (err as Error).name === "AbortError";
       updateJob(job.id, {
         status: "error",
-        error: isTimeout
-          ? "Server did not respond in time. Check your internet connection and try again."
-          : String(err),
+        error: err instanceof Error ? err.message : String(err),
       });
-    } finally {
-      clearTimeout(timeoutId);
     }
   }, []);
 
@@ -98,7 +135,6 @@ export default function UploadModal({ onClose, onDone }: UploadModalProps) {
     async (newJobs: FileUploadJob[]) => {
       setPhase("uploading");
       abortRef.current = new AbortController();
-      // Upload sequentially — Discord rate limits make parallel uploads hit 429s
       for (const job of newJobs) {
         await uploadOne(job);
       }
@@ -119,9 +155,7 @@ export default function UploadModal({ onClose, onDone }: UploadModalProps) {
       bytes: 0,
     }));
     setJobs((prev) => [...prev, ...newJobs]);
-    if (phase === "pick") {
-      void startAll(newJobs);
-    }
+    if (phase === "pick") void startAll(newJobs);
   };
 
   const totalFiles = jobs.length;
@@ -146,7 +180,7 @@ export default function UploadModal({ onClose, onDone }: UploadModalProps) {
         </div>
 
         <div className="p-5 flex flex-col gap-4 overflow-y-auto flex-1">
-          {/* Drop zone — always visible so you can add more */}
+          {/* Drop zone */}
           {phase !== "allDone" && (
             <div
               className={`border-2 border-dashed p-6 text-center cursor-pointer transition-colors ${
@@ -154,11 +188,7 @@ export default function UploadModal({ onClose, onDone }: UploadModalProps) {
               }`}
               onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
               onDragLeave={() => setDragOver(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragOver(false);
-                if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
-              }}
+              onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files); }}
               onClick={() => {
                 const input = document.createElement("input");
                 input.type = "file";
@@ -219,7 +249,6 @@ export default function UploadModal({ onClose, onDone }: UploadModalProps) {
             </div>
           )}
 
-          {/* All done summary */}
           {phase === "allDone" && (
             <div className="text-center py-2">
               <div className="text-blueprint-cyan text-2xl mb-2">✓</div>

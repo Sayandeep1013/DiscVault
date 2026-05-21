@@ -33,10 +33,13 @@ export async function rebuildFile(opts: RebuildOptions): Promise<void> {
     writer.end((err: Error | null | undefined) => (err ? reject(err) : resolve()));
   });
 
-  const actualHash = await hashFile(outputPath);
-  if (actualHash !== manifest.fileSha256) {
-    throw new Error(
-      `SHA-256 mismatch after rebuild. Expected ${manifest.fileSha256}, got ${actualHash}`
-    );
+  // Only verify full-file SHA-256 if it was stored (CLI uploads store it; web uploads skip it)
+  if (manifest.fileSha256) {
+    const actualHash = await hashFile(outputPath);
+    if (actualHash !== manifest.fileSha256) {
+      throw new Error(
+        `SHA-256 mismatch after rebuild. Expected ${manifest.fileSha256}, got ${actualHash}`
+      );
+    }
   }
 }
