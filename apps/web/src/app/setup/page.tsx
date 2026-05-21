@@ -129,30 +129,64 @@ export default function SetupPage() {
           </button>
         </StepPanel>
 
-        {/* ── Step 2: Invite the bot ── */}
-        <StepPanel index={2} current={step} title="Add Bot to Your Discord Server">
-          <p className="text-blueprint-muted text-xs leading-relaxed">
-            Your bot needs to be in the server where you want to store files.
-            Click the button below — it uses your bot token to generate the correct invite link automatically.
-          </p>
+        {/* ── Step 2: Invite + Permissions ── */}
+        <StepPanel index={2} current={step} title="Invite Bot & Set Permissions">
 
-          {inviteUrl && (
-            <a
-              href={inviteUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-4 flex items-center justify-center gap-2 w-full py-2.5 border border-blueprint-cyan text-blueprint-cyan text-xs uppercase tracking-widest hover:bg-blueprint-cyan hover:text-blueprint-bg transition-colors"
-            >
-              ↗ Open Discord Bot Invite
-            </a>
-          )}
+          {/* 2a — Invite */}
+          <div className="flex flex-col gap-2">
+            <div className="text-blueprint-cyan text-xs font-bold">A. Invite your bot to the server</div>
+            <p className="text-blueprint-muted text-xs">
+              This link is auto-generated from your bot token with the exact permissions DiscVault needs.
+            </p>
+            {inviteUrl && (
+              <a href={inviteUrl} target="_blank" rel="noreferrer"
+                className="flex items-center justify-center gap-2 py-2.5 border border-blueprint-cyan text-blueprint-cyan text-xs uppercase tracking-widest hover:bg-blueprint-cyan hover:text-blueprint-bg transition-colors">
+                ↗ Open Bot Invite Link
+              </a>
+            )}
+            <p className="text-blueprint-muted text-xs">Select your server → Authorize → complete the captcha.</p>
+          </div>
 
-          <div className="mt-4 border border-blueprint-border p-3 text-xs text-blueprint-muted flex flex-col gap-1">
-            <div className="text-blueprint-cyanDim font-bold mb-1">After inviting:</div>
-            <div>1. In Discord, enable <strong className="text-blueprint-cyanDim">Developer Mode</strong>: Settings → Advanced → Developer Mode → ON</div>
-            <div>2. Create text channels: <code className="text-blueprint-cyan">vault-001</code>, <code className="text-blueprint-cyan">vault-002</code>, <code className="text-blueprint-cyan">vault-003</code>, <code className="text-blueprint-cyan">manifests</code></div>
-            <div>3. Right-click your server name → <strong className="text-blueprint-cyanDim">Copy Server ID</strong></div>
-            <div>4. Right-click each channel → <strong className="text-blueprint-cyanDim">Copy Channel ID</strong></div>
+          {/* 2b — Channel permissions */}
+          <div className="mt-4 flex flex-col gap-2">
+            <div className="text-blueprint-cyan text-xs font-bold">B. Grant permissions on each channel</div>
+            <p className="text-blueprint-muted text-xs">
+              If your channels are role-locked (private), you must manually give the bot these permissions:
+            </p>
+            <div className="border border-blueprint-border p-3 text-xs flex flex-col gap-3">
+              <div>
+                <div className="text-blueprint-cyanDim font-bold mb-1">Vault channels (vault-001, vault-002, ...)</div>
+                <div className="text-blueprint-muted flex flex-col gap-0.5">
+                  <div>✓ View Channel</div>
+                  <div>✓ Send Messages</div>
+                  <div className="text-blueprint-cyan font-bold">✓ Attach Files  ← most commonly missed</div>
+                  <div className="text-blueprint-muted opacity-60">✗ Read Message History (not needed)</div>
+                </div>
+              </div>
+              <div>
+                <div className="text-blueprint-cyanDim font-bold mb-1">Manifests channel</div>
+                <div className="text-blueprint-muted flex flex-col gap-0.5">
+                  <div>✓ View Channel</div>
+                  <div>✓ Send Messages</div>
+                  <div>✓ Attach Files</div>
+                  <div className="text-blueprint-cyan font-bold">✓ Read Message History  ← most commonly missed</div>
+                </div>
+              </div>
+              <div className="text-blueprint-muted text-xs opacity-70 border-t border-blueprint-border pt-2">
+                How: right-click channel → Edit Channel → Permissions → add your bot&apos;s role → enable the checkboxes above
+              </div>
+            </div>
+          </div>
+
+          {/* 2c — Setup channels */}
+          <div className="mt-4 flex flex-col gap-2">
+            <div className="text-blueprint-cyan text-xs font-bold">C. Create vault channels & copy IDs</div>
+            <div className="border border-blueprint-border p-3 text-xs text-blueprint-muted flex flex-col gap-1">
+              <div>1. Enable Developer Mode: Discord Settings → Advanced → Developer Mode → ON</div>
+              <div>2. Create text channels: <code className="text-blueprint-cyan">vault-001</code>, <code className="text-blueprint-cyan">vault-002</code>, <code className="text-blueprint-cyan">vault-003</code>, <code className="text-blueprint-cyan">manifests</code></div>
+              <div>3. Right-click server name → <strong className="text-blueprint-cyanDim">Copy Server ID</strong></div>
+              <div>4. Right-click each channel → <strong className="text-blueprint-cyanDim">Copy Channel ID</strong></div>
+            </div>
           </div>
 
           <div className="flex gap-2 mt-4">
@@ -162,7 +196,7 @@ export default function SetupPage() {
             </button>
             <button onClick={() => setStep(3)}
               className="flex-1 py-2 border border-blueprint-cyan text-blueprint-cyan text-xs uppercase tracking-widest hover:bg-blueprint-cyan hover:text-blueprint-bg transition-colors">
-              I've done this → Enter channel IDs
+              Done, enter channel IDs →
             </button>
           </div>
         </StepPanel>

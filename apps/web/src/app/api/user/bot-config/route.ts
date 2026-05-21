@@ -40,17 +40,18 @@ export async function POST(req: NextRequest) {
 
   const rest = createDiscordClient({ botToken });
 
-  // Validate bot token
+  // 1. Validate bot token
+  let botUser: { username: string } | null = null;
   try {
-    await rest.get(Routes.user("@me"));
+    botUser = await rest.get(Routes.user("@me")) as { username: string };
   } catch {
     return NextResponse.json(
-      { error: "Bot token is invalid. Go to Discord Developer Portal → Bot → Reset Token and copy the new one." },
+      { error: "Bot token is invalid. In Discord Developer Portal → your app → Bot tab → Reset Token → copy the new token." },
       { status: 400 }
     );
   }
 
-  // Validate manifest channel — check both VIEW and READ_MESSAGE_HISTORY
+  // 2. Validate manifests channel — read access
   try {
     await rest.get(Routes.channel(manifestChannelId));
     await rest.get(Routes.channelMessages(manifestChannelId), {
@@ -59,35 +60,31 @@ export async function POST(req: NextRequest) {
   } catch (err: unknown) {
     const status = (err as Record<string, unknown>)["status"];
     if (status === 403) {
-      return NextResponse.json(
-        {
-          error:
-            "Bot cannot access the manifests channel (Missing Access). " +
-            "Make sure: (1) you invited your bot to the server using the invite link in Step 2, " +
-            "(2) the bot has View Channel and Read Message History permissions on that channel.",
-        },
-        { status: 400 }
-      );
+      return NextResponse.json({
+        error: `Bot @${botUser?.username ?? "bot"} cannot read the manifests channel.\n\nIn Discord: right-click the manifests channel → Edit Channel → Permissions → find your bot's role → enable: ✓ View Channel, ✓ Read Message History, ✓ Send Messages, ✓ Attach Files.`,
+      }, { status: 400 });
     }
-    return NextResponse.json(
-      { error: `Manifests channel ID ${manifestChannelId} not found. Double-check you copied the right channel ID.` },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: `Manifests channel ID not found. Re-copy the ID: right-click channel → Copy Channel ID (requires Developer Mode in Discord Settings → Advanced).` }, { status: 400 });
   }
 
-  // Validate vault channels
+  // 3. Validate vault channels — write access (try sending + deleting a test message)
   for (const chId of vaultChannelIds as string[]) {
     try {
-      await rest.get(Routes.channel(chId));
-    } catch {
-      return NextResponse.json(
-        {
-          error:
-            `Bot cannot access vault channel ${chId}. ` +
-            "Make sure the bot is in your server and has Send Messages + Attach Files permissions.",
-        },
-        { status: 400 }
-      );
+      // Test that the bot can actually upload a file attachment (not just view the channel)
+      const testMsg = await rest.post(Routes.channelMessages(chId), {
+        files: [{ data: Buffer.from("discvault-permission-test"), name: "test.bin", contentType: "application/octet-stream" }],
+        body: { attachments: [{ id: "0", filename: "test.bin" }] },
+      }) as { id: string };
+      // Clean up immediately
+      await rest.delete(Routes.channelMessage(chId, testMsg.id));
+    } catch (err: unknown) {
+      const status = (err as Record<string, unknown>)["status"];
+      if (status === 403) {
+        return NextResponse.json({
+          error: `Bot @${botUser?.username ?? "bot"} cannot upload files to vault channel ${chId}.\n\nIn Discord: right-click that channel → Edit Channel → Permissions → find your bot's role → enable: ✓ View Channel, ✓ Send Messages, ✓ Attach Files.`,
+        }, { status: 400 });
+      }
+      return NextResponse.json({ error: `Vault channel ${chId} not found. Re-copy the channel ID.` }, { status: 400 });
     }
   }
 
@@ -101,11 +98,8 @@ export async function POST(req: NextRequest) {
     );
   } catch (err) {
     console.error("saveBotConfig failed:", err);
-    return NextResponse.json(
-      { error: "Database error saving config. Please try again in a moment." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Database error. Please try again." }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, botUsername: botUser?.username });
 }
