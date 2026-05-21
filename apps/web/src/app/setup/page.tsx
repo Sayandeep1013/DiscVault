@@ -80,31 +80,57 @@ export default function SetupPage() {
 
         {/* ── Step 1: Create the bot ── */}
         <StepPanel index={1} current={step} title="Create a Discord Bot">
-          <p className="text-blueprint-muted text-xs leading-relaxed">
-            DiscVault uses your own Discord bot so your files stay on your own server.
-            You only need to do this once.
+          <p className="text-blueprint-muted text-xs leading-relaxed mb-4">
+            DiscVault uses <strong className="text-blueprint-cyanDim">your own bot</strong> so your files stay on your own server. Takes about 2 minutes.
           </p>
-          <ol className="text-blueprint-muted text-xs flex flex-col gap-2 mt-3 list-none">
-            <li className="flex gap-2"><span className="text-blueprint-cyan shrink-0">1.</span>
-              Go to{" "}
-              <a href="https://discord.com/developers/applications" target="_blank" rel="noreferrer"
-                className="text-blueprint-cyan hover:underline">
-                discord.com/developers/applications
-              </a>
-            </li>
-            <li className="flex gap-2"><span className="text-blueprint-cyan shrink-0">2.</span>
-              Click <strong className="text-blueprint-cyanDim">New Application</strong> → give it any name → Create
-            </li>
-            <li className="flex gap-2"><span className="text-blueprint-cyan shrink-0">3.</span>
-              Left sidebar → <strong className="text-blueprint-cyanDim">Bot</strong> → click <strong className="text-blueprint-cyanDim">Add Bot</strong> → confirm
-            </li>
-            <li className="flex gap-2"><span className="text-blueprint-cyan shrink-0">4.</span>
-              Click <strong className="text-blueprint-cyanDim">Reset Token</strong> → copy it
-            </li>
-          </ol>
 
-          <div className="mt-4 flex flex-col gap-1">
-            <label className="text-blueprint-muted text-xs font-mono">BOT_TOKEN</label>
+          {/* Visual step-by-step */}
+          <div className="flex flex-col gap-3">
+
+            <GuideStep n="1" title="Open the Developer Portal">
+              <span>Go to{" "}
+                <a href="https://discord.com/developers/applications" target="_blank" rel="noreferrer"
+                  className="text-blueprint-cyan hover:underline font-bold">
+                  discord.com/developers/applications
+                </a>
+              </span>
+            </GuideStep>
+
+            <GuideStep n="2" title="Create a new application">
+              Click <Kw>New Application</Kw> (top-right) → type any name (e.g. <Kw>MyVault</Kw>) → click <Kw>Create</Kw>
+            </GuideStep>
+
+            <GuideStep n="3" title="Add a bot to the application">
+              In the left sidebar click <Kw>Bot</Kw> → click <Kw>Add Bot</Kw> → click <Kw>Yes, do it!</Kw>
+            </GuideStep>
+
+            <GuideStep n="4" title="Copy the bot token">
+              <div className="flex flex-col gap-1">
+                <span>Under <Kw>Token</Kw> → click <Kw>Reset Token</Kw> → confirm → click <Kw>Copy</Kw></span>
+                <div className="border border-yellow-800 bg-yellow-950/30 px-3 py-2 text-yellow-400 text-xs mt-1">
+                  ⚠ The token is shown only once. Copy it now before leaving the page.<br />
+                  Never share it publicly — it gives full control of your bot.
+                </div>
+              </div>
+            </GuideStep>
+
+            <GuideStep n="5" title="Turn off Gateway Intents (important)">
+              <div className="flex flex-col gap-1">
+                <span>Scroll down on the Bot page to <Kw>Privileged Gateway Intents</Kw></span>
+                <span>Turn <strong className="text-red-400">OFF</strong> all three toggles — DiscVault does not need them</span>
+                <div className="text-blueprint-muted text-xs opacity-60 mt-1">
+                  (Presence Intent, Server Members Intent, Message Content Intent — all OFF)
+                </div>
+              </div>
+            </GuideStep>
+
+          </div>
+
+          {/* Token input */}
+          <div className="mt-5 flex flex-col gap-1">
+            <label className="text-blueprint-muted text-xs font-mono">
+              BOT_TOKEN — paste what you copied in step 4
+            </label>
             <input
               type="password"
               placeholder="MTUwNjg0OTg1OT..."
@@ -113,10 +139,12 @@ export default function SetupPage() {
               className="bg-blueprint-bg border border-blueprint-border text-blueprint-cyanDim text-xs px-3 py-2 outline-none focus:border-blueprint-cyan placeholder:text-blueprint-muted font-mono"
             />
             {form.botToken && !botClientId && (
-              <div className="text-red-400 text-xs">Token format looks wrong — paste the full token from the Bot page.</div>
+              <div className="text-red-400 text-xs mt-1">
+                ✗ Token format looks wrong — make sure you copied the full token from the <strong>Bot</strong> tab (not the Client Secret or Application ID).
+              </div>
             )}
             {botClientId && (
-              <div className="text-blueprint-cyan text-xs">✓ Bot ID detected: {botClientId}</div>
+              <div className="text-blueprint-cyan text-xs mt-1">✓ Token valid — Bot ID: {botClientId}</div>
             )}
           </div>
 
@@ -296,5 +324,30 @@ function Field({ label, placeholder, value, onChange }: {
         className="bg-blueprint-bg border border-blueprint-border text-blueprint-cyanDim text-xs px-3 py-2 outline-none focus:border-blueprint-cyan placeholder:text-blueprint-muted font-mono"
       />
     </div>
+  );
+}
+
+// Numbered guide step with a connecting line
+function GuideStep({ n, title, children }: { n: string; title: string; children: React.ReactNode }) {
+  return (
+    <div className="flex gap-3">
+      <div className="flex flex-col items-center shrink-0">
+        <div className="w-5 h-5 border border-blueprint-cyan text-blueprint-cyan text-xs flex items-center justify-center font-bold shrink-0">
+          {n}
+        </div>
+        <div className="w-px flex-1 bg-blueprint-border mt-1" />
+      </div>
+      <div className="flex flex-col gap-1 pb-3 flex-1">
+        <div className="text-blueprint-cyanDim text-xs font-bold">{title}</div>
+        <div className="text-blueprint-muted text-xs leading-relaxed">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+// Keyword highlight — looks like a UI element label
+function Kw({ children }: { children: React.ReactNode }) {
+  return (
+    <strong className="text-blueprint-cyanDim font-bold">{children}</strong>
   );
 }
