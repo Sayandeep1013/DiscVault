@@ -10,7 +10,11 @@ import pLimit from "p-limit";
 import { customAlphabet } from "nanoid";
 
 const nanoid = customAlphabet("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", 10);
-const CONCURRENCY = 3;
+
+// Use 4 concurrent uploads per vault channel, capped at Discord's global limit of 50 req/s
+function getConcurrency(channelCount: number): number {
+  return Math.min(channelCount * 4, 40);
+}
 
 export const dynamic = "force-dynamic";
 
@@ -54,7 +58,7 @@ export async function POST(req: NextRequest) {
         // Collect chunks first to know totalChunks, then upload
         // For streaming: we process and upload simultaneously
         const uploadedChunks: ChunkMeta[] = [];
-        const limit = pLimit(CONCURRENCY);
+        const limit = pLimit(getConcurrency(channelCount));
         const uploadTasks: Promise<void>[] = [];
         let chunkIndex = 0;
         let bytesHashed = 0;

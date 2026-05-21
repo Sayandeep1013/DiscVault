@@ -28,7 +28,8 @@ export interface UploadOptions {
   title?: string;
 }
 
-const CONCURRENCY = 3;
+// 4 concurrent uploads per vault channel, capped at 40 (Discord global limit ~50 req/s)
+const getConcurrency = (channelCount: number) => Math.min(channelCount * 4, 40);
 
 export async function runUpload(filePath: string, opts: UploadOptions): Promise<void> {
   const config = await loadConfig();
@@ -77,7 +78,7 @@ export async function runUpload(filePath: string, opts: UploadOptions): Promise<
 
   const pendingIndexes = new Set(getPendingChunks(db, fileId).map((r) => r.chunk_index));
   const channelCount = config.vaultChannelIds.length;
-  const uploadLimiter = pLimit(CONCURRENCY);
+  const uploadLimiter = pLimit(getConcurrency(channelCount));
   const pendingUploads: Promise<void>[] = [];
 
   for await (const chunk of chunkFile(filePath)) {
