@@ -56,13 +56,14 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-// Proxy that wraps every .query() call with withRetry
+// Proxy that wraps every .query() call with withRetry.
+// Must use .call(target, ...) to preserve `this` — without it pg's Pool.query throws.
 function resilientPool(p: Pool): Pool {
   return new Proxy(p, {
     get(target, prop) {
       if (prop === "query") {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return (...args: any[]) => withRetry(() => (target.query as any)(...args));
+        return (...args: any[]) => withRetry(() => (target.query as any).call(target, ...args));
       }
       return Reflect.get(target, prop);
     },
