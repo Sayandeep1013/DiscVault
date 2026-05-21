@@ -1,0 +1,29 @@
+{
+  "name": "@discvault/discord-adapter",
+  "version": "0.0.1",
+  "description": "Discord REST API adapter for DiscVault chunk storage",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch"
+  },
+  "dependencies": {
+    "@discordjs/rest": "^2.4.0",
+    "discord-api-types": "^0.37.97",
+    "p-limit": "^6.2.0",
+    "undici": "^6.21.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.3.5",
+    "@discvault/core": "workspace:*"
+  }
+}

@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  background-color: #0a0f1e;
+  color: #e2e8f0;
+  font-family: 'JetBrains Mono', 'Space Mono', 'Fira Code', monospace;
+}
+
+/* Blueprint dot grid */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: radial-gradient(circle, #1e3a5f 1px, transparent 1px);
+  background-size: 28px 28px;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.6;
+}
+
+/* Corner bracket mixin */
+.blueprint-panel {
+  position: relative;
+  border: 1px solid #1e3a5f;
+  background: #0d1529;
+}
+
+.blueprint-panel::before,
+.blueprint-panel::after {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-color: #38bdf8;
+  border-style: solid;
+}
+
+.blueprint-panel::before {
+  top: -1px;
+  left: -1px;
+  border-width: 2px 0 0 2px;
+}
+
+.blueprint-panel::after {
+  bottom: -1px;
+  right: -1px;
+  border-width: 0 2px 2px 0;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #0a0f1e; }
+::-webkit-scrollbar-thumb { background: #1e3a5f; border-radius: 0; }
+::-webkit-scrollbar-thumb:hover { background: #38bdf8; }
+
+/* Selection */
+::selection { background: #38bdf820; color: #38bdf8; }

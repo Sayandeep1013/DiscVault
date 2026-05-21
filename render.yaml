@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: discvault
+    runtime: node
+    rootDir: apps/web
+    buildCommand: cd ../.. && npm install -g pnpm && pnpm install && pnpm --filter @discvault/core build && pnpm --filter @discvault/discord-adapter build && pnpm --filter @discvault/web build
+    startCommand: pnpm --filter @discvault/web start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: DISCORD_CLIENT_ID
+        sync: false
+      - key: DISCORD_CLIENT_SECRET
+        sync: false
+      - key: DISCORD_REDIRECT_URI
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
