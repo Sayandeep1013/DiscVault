@@ -34,6 +34,9 @@ export default function UploadModal({ onClose, onDone }: UploadModalProps) {
   const uploadOne = useCallback(async (job: FileUploadJob) => {
     updateJob(job.id, { status: "uploading", startedAt: Date.now() });
 
+    // Abort automatically if server doesn't respond within 15 seconds
+    const timeoutId = setTimeout(() => abortRef.current?.abort(), 15_000);
+
     try {
       const res = await fetch("/api/upload", {
         method: "POST",
@@ -62,7 +65,10 @@ export default function UploadModal({ onClose, onDone }: UploadModalProps) {
         for (const part of parts) {
           if (!part.startsWith("data: ")) continue;
           const ev = JSON.parse(part.slice(6)) as Record<string, unknown>;
-          if (ev["type"] === "progress") {
+          if (ev["type"] === "heartbeat") {
+            // Server acknowledged the request — chunking is starting
+            updateJob(job.id, { status: "uploading" });
+          } else if (ev["type"] === "progress") {
             updateJob(job.id, {
               chunk: Number(ev["chunk"]),
               total: Number(ev["total"]) > 0 ? Number(ev["total"]) : job.total,
@@ -76,9 +82,15 @@ export default function UploadModal({ onClose, onDone }: UploadModalProps) {
         }
       }
     } catch (err) {
-      if ((err as Error).name !== "AbortError") {
-        updateJob(job.id, { status: "error", error: String(err) });
-      }
+      const isTimeout = (err as Error).name === "AbortError";
+      updateJob(job.id, {
+        status: "error",
+        error: isTimeout
+          ? "Server did not respond in time. Check your internet connection and try again."
+          : String(err),
+      });
+    } finally {
+      clearTimeout(timeoutId);
     }
   }, []);
 

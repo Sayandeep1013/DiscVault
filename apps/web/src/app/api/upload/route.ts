@@ -29,6 +29,10 @@ export async function POST(req: NextRequest) {
 
   const stream = new ReadableStream({
     async start(controller) {
+      // Send a heartbeat immediately so the client knows the stream is open.
+      // This prevents the "nothing happens" symptom when the server is slow to respond.
+      send(controller, { type: "heartbeat" });
+
       try {
         const resolved = await resolveConfig(req);
         if (!resolved) {
