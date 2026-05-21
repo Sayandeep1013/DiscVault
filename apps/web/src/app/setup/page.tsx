@@ -160,48 +160,71 @@ export default function SetupPage() {
         {/* ── Step 2: Invite + Permissions ── */}
         <StepPanel index={2} current={step} title="Invite Bot & Set Permissions">
 
-          {/* 2a — Invite */}
-          <div className="flex flex-col gap-2">
-            <div className="text-blueprint-cyan text-xs font-bold">A. Invite your bot to the server</div>
-            <p className="text-blueprint-muted text-xs">
-              This link is auto-generated from your bot token with the exact permissions DiscVault needs.
-            </p>
+          {/* 2a — Invite via our link */}
+          <div className="flex flex-col gap-3">
+            <div className="text-blueprint-cyan text-xs font-bold">A. Add the bot to your server</div>
+
+            {/* Big prominent invite button */}
             {inviteUrl && (
               <a href={inviteUrl} target="_blank" rel="noreferrer"
-                className="flex items-center justify-center gap-2 py-2.5 border border-blueprint-cyan text-blueprint-cyan text-xs uppercase tracking-widest hover:bg-blueprint-cyan hover:text-blueprint-bg transition-colors">
-                ↗ Open Bot Invite Link
+                className="flex items-center justify-center gap-3 py-4 border-2 border-blueprint-cyan text-blueprint-cyan text-sm font-bold uppercase tracking-widest hover:bg-blueprint-cyan hover:text-blueprint-bg transition-colors">
+                ↗ Click Here to Invite Your Bot
               </a>
             )}
-            <p className="text-blueprint-muted text-xs">Select your server → Authorize → complete the captcha.</p>
+
+            <div className="text-blueprint-muted text-xs">
+              Select your server → click <strong className="text-blueprint-cyanDim">Authorize</strong> → complete the captcha.
+            </div>
+
+            {/* Warning about manual OAuth2 */}
+            <div className="border border-yellow-800 bg-yellow-950/30 px-3 py-2 text-yellow-300 text-xs leading-relaxed">
+              <strong>⚠ Use the button above — do NOT generate your own URL from Discord&apos;s OAuth2 page.</strong>
+              <br />
+              The Discord OAuth2 URL Generator shows permission checkboxes that are easy to miss.
+              If you invite without permissions, the bot joins the server but cannot read or write anything.
+              Our link already has all 4 required permissions encoded in it.
+            </div>
+
+            {/* Already invited without permissions? */}
+            <details className="border border-blueprint-border text-xs">
+              <summary className="px-3 py-2 text-blueprint-muted cursor-pointer hover:text-blueprint-cyan">
+                Already invited the bot but it has no permissions? Fix it here ▾
+              </summary>
+              <div className="px-3 pb-3 pt-2 flex flex-col gap-2 text-blueprint-muted border-t border-blueprint-border">
+                <div>You don&apos;t need to kick and re-invite. Just grant a role:</div>
+                <div>1. Discord → your server → <strong className="text-blueprint-cyanDim">Server Settings</strong> → <strong className="text-blueprint-cyanDim">Roles</strong></div>
+                <div>2. Create a new role (e.g. <code className="text-blueprint-cyan">vault-bot</code>) with these permissions:</div>
+                <div className="border border-blueprint-border p-2 flex flex-col gap-0.5 ml-3">
+                  <div className="text-blueprint-cyan">✓ View Channels</div>
+                  <div className="text-blueprint-cyan">✓ Send Messages</div>
+                  <div className="text-blueprint-cyan">✓ Attach Files</div>
+                  <div className="text-blueprint-cyan">✓ Read Message History</div>
+                </div>
+                <div>3. Go to your server member list → find your bot → click it → <strong className="text-blueprint-cyanDim">Add Role</strong> → assign <code className="text-blueprint-cyan">vault-bot</code></div>
+              </div>
+            </details>
           </div>
 
-          {/* 2b — Channel permissions */}
-          <div className="mt-4 flex flex-col gap-2">
-            <div className="text-blueprint-cyan text-xs font-bold">B. Grant permissions on each channel</div>
+          {/* 2b — Channel permissions for role-locked channels */}
+          <div className="mt-5 flex flex-col gap-2">
+            <div className="text-blueprint-cyan text-xs font-bold">B. If your channels are private / role-locked</div>
             <p className="text-blueprint-muted text-xs">
-              If your channels are role-locked (private), you must manually give the bot these permissions:
+              The bot also needs explicit permission on each channel. Right-click the channel → <strong className="text-blueprint-cyanDim">Edit Channel</strong> → <strong className="text-blueprint-cyanDim">Permissions</strong> → add the bot&apos;s role and enable:
             </p>
             <div className="border border-blueprint-border p-3 text-xs flex flex-col gap-3">
               <div>
-                <div className="text-blueprint-cyanDim font-bold mb-1">Vault channels (vault-001, vault-002, ...)</div>
+                <div className="text-blueprint-cyanDim font-bold mb-1">vault-001, vault-002, vault-003</div>
                 <div className="text-blueprint-muted flex flex-col gap-0.5">
-                  <div>✓ View Channel</div>
-                  <div>✓ Send Messages</div>
-                  <div className="text-blueprint-cyan font-bold">✓ Attach Files  ← most commonly missed</div>
-                  <div className="text-blueprint-muted opacity-60">✗ Read Message History (not needed)</div>
+                  <div>✓ View Channel &nbsp;✓ Send Messages</div>
+                  <div className="text-blueprint-cyan font-bold">✓ Attach Files  ← without this, uploads fail silently</div>
                 </div>
               </div>
               <div>
-                <div className="text-blueprint-cyanDim font-bold mb-1">Manifests channel</div>
+                <div className="text-blueprint-cyanDim font-bold mb-1">manifests</div>
                 <div className="text-blueprint-muted flex flex-col gap-0.5">
-                  <div>✓ View Channel</div>
-                  <div>✓ Send Messages</div>
-                  <div>✓ Attach Files</div>
-                  <div className="text-blueprint-cyan font-bold">✓ Read Message History  ← most commonly missed</div>
+                  <div>✓ View Channel &nbsp;✓ Send Messages &nbsp;✓ Attach Files</div>
+                  <div className="text-blueprint-cyan font-bold">✓ Read Message History  ← without this, file library is empty</div>
                 </div>
-              </div>
-              <div className="text-blueprint-muted text-xs opacity-70 border-t border-blueprint-border pt-2">
-                How: right-click channel → Edit Channel → Permissions → add your bot&apos;s role → enable the checkboxes above
               </div>
             </div>
           </div>
