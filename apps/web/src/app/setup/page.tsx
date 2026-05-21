@@ -34,6 +34,7 @@ export default function SetupPage() {
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -59,7 +60,7 @@ export default function SetupPage() {
       });
       const data = await res.json() as { ok?: boolean; error?: string };
       if (!res.ok) throw new Error(data.error ?? "Save failed");
-      router.push("/");
+      setSaved(true); // show success before navigating
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -177,30 +178,43 @@ export default function SetupPage() {
               value={form.manifestChannelId} onChange={set("manifestChannelId")} />
           </div>
 
+          {/* Error — full width, hard to miss */}
           {error && (
-            <div className="text-red-400 text-xs border border-red-900 px-3 py-2 mt-2">
-              ✗ {error}
-              {error.includes("access") && (
-                <div className="mt-1 text-blueprint-muted">
-                  Make sure you completed Step 2 and the bot is in your server.
-                </div>
-              )}
+            <div className="border border-red-500 bg-red-950/40 px-4 py-3 mt-2">
+              <div className="text-red-400 text-xs font-bold mb-1">✗ Setup failed</div>
+              <div className="text-red-300 text-xs leading-relaxed">{error}</div>
             </div>
           )}
 
-          <div className="flex gap-2 mt-4">
-            <button onClick={() => setStep(2)}
-              className="px-4 py-2 border border-blueprint-border text-blueprint-muted text-xs uppercase tracking-widest hover:border-blueprint-cyan hover:text-blueprint-cyan transition-colors">
-              ← Back
-            </button>
-            <button
-              onClick={save}
-              disabled={saving || !form.guildId || !form.vaultChannelIds || !form.manifestChannelId}
-              className="flex-1 py-2 border border-blueprint-cyan text-blueprint-cyan text-xs uppercase tracking-widest hover:bg-blueprint-cyan hover:text-blueprint-bg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {saving ? "Validating & saving..." : "Save & Open Vault →"}
-            </button>
-          </div>
+          {/* Success */}
+          {saved && (
+            <div className="border border-green-500 bg-green-950/40 px-4 py-3 mt-2 text-center">
+              <div className="text-green-400 text-sm font-bold mb-2">✓ Bot connected successfully!</div>
+              <div className="text-blueprint-muted text-xs mb-3">Your vault is ready.</div>
+              <button
+                onClick={() => router.push("/")}
+                className="px-6 py-2 border border-blueprint-cyan text-blueprint-cyan text-xs uppercase tracking-widest hover:bg-blueprint-cyan hover:text-blueprint-bg transition-colors"
+              >
+                Open Vault →
+              </button>
+            </div>
+          )}
+
+          {!saved && (
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => { setStep(2); setError(null); }}
+                className="px-4 py-2 border border-blueprint-border text-blueprint-muted text-xs uppercase tracking-widest hover:border-blueprint-cyan hover:text-blueprint-cyan transition-colors">
+                ← Back
+              </button>
+              <button
+                onClick={save}
+                disabled={saving || !form.guildId || !form.vaultChannelIds || !form.manifestChannelId}
+                className="flex-1 py-2 border border-blueprint-cyan text-blueprint-cyan text-xs uppercase tracking-widest hover:bg-blueprint-cyan hover:text-blueprint-bg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {saving ? "Validating bot access..." : "Save & Open Vault →"}
+              </button>
+            </div>
+          )}
         </StepPanel>
 
       </main>
