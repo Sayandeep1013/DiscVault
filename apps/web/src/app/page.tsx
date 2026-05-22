@@ -38,6 +38,17 @@ export default function LibraryPage() {
       if (bustCache) await fetch("/api/files", { method: "DELETE" });
       const res = await fetch("/api/files");
       if (res.status === 404) { setNotConfigured(true); setLoading(false); return; }
+      if (res.status === 503) {
+        // DB waking up — retry once after 2 seconds
+        await new Promise((r) => setTimeout(r, 2000));
+        const retry = await fetch("/api/files");
+        if (!retry.ok) throw new Error("Server temporarily unavailable. Please refresh.");
+        const retryData = await retry.json() as { files: Manifest[]; error?: string; _scan?: typeof scanInfo };
+        if (retryData.error) throw new Error(retryData.error);
+        setFiles(retryData.files);
+        if (retryData._scan) setScanInfo(retryData._scan);
+        return;
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json() as { files: Manifest[]; error?: string; _scan?: typeof scanInfo };
       if (data.error) throw new Error(data.error);

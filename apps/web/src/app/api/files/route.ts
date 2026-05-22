@@ -71,7 +71,13 @@ async function scanChannel(
 }
 
 export async function GET(req: NextRequest) {
-  const ctx = await getAuthContext(req);
+  let ctx;
+  try {
+    ctx = await getAuthContext(req);
+  } catch (err) {
+    console.error("[files] getAuthContext failed:", err);
+    return NextResponse.json({ error: "Database temporarily unavailable. Try again in a moment.", files: [] }, { status: 503 });
+  }
   if (!ctx) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
   const allConfigs = await getAllBotConfigs(ctx.userId);
@@ -95,6 +101,8 @@ export async function GET(req: NextRequest) {
 
     try {
       const { manifests, messagesScanned, errors } = await scanChannel(cfg, guildName);
+      // Only cache if the scan actually touched Discord (messagesScanned > 0 OR 0 messages IS the real state)
+      // Don't cache if scan threw before reading any messages
       channelCache.set(cacheKey, { manifests, at: Date.now() });
       allManifests.push(...manifests);
       totalMessages += messagesScanned;
@@ -102,6 +110,8 @@ export async function GET(req: NextRequest) {
     } catch (err) {
       console.error(`[files] scan failed for ${guildName}:`, err);
       totalErrors++;
+      // Do NOT cache on error — next request will retry the scan
+      channelCache.delete(cacheKey);
     }
   }
 

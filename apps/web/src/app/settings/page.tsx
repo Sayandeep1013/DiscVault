@@ -35,12 +35,19 @@ export default function SettingsPage() {
 
   // Removing
   const [removingGuildId, setRemovingGuildId] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
 
   const loadConfig = () =>
     fetch("/api/user/bot-config")
       .then((r) => r.json())
-      .then((d) => setConfig(d as ConfigDisplay))
-      .catch(() => setConfig({ configured: false, servers: [] }));
+      .then((d) => {
+        // Only update config if the response is valid — never silently clear servers
+        const data = d as ConfigDisplay;
+        if (Array.isArray(data.servers)) setConfig(data);
+      })
+      .catch(() => {
+        // Don't clear existing config on fetch error — keeps servers visible
+      });
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -64,9 +71,19 @@ export default function SettingsPage() {
 
   const removeServer = async (guildId: string) => {
     setRemovingGuildId(guildId);
+    setRemoveError(null);
     try {
-      await fetch(`/api/user/bot-config?guildId=${guildId}`, { method: "DELETE" });
+      const res = await fetch(`/api/user/bot-config?guildId=${encodeURIComponent(guildId)}`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json() as { error?: string };
+        throw new Error(err.error ?? `HTTP ${res.status}`);
+      }
+      // Immediately update local state so there's no flicker waiting for loadConfig
+      setConfig((prev) => prev ? { ...prev, servers: prev.servers.filter((s) => s.guildId !== guildId) } : prev);
+      // Then sync from server
       await loadConfig();
+    } catch (err) {
+      setRemoveError(err instanceof Error ? err.message : "Failed to remove server");
     } finally {
       setRemovingGuildId(null);
     }
@@ -148,6 +165,9 @@ export default function SettingsPage() {
 
           {servers.length === 0 && (
             <div className="text-blueprint-muted text-xs">No servers connected. <Link href="/setup" className="text-blueprint-cyan hover:underline">Set up your first bot →</Link></div>
+          )}
+          {removeError && (
+            <div className="text-red-400 text-xs border border-red-900 px-3 py-2">{removeError}</div>
           )}
 
           <div className="flex flex-col gap-4">
