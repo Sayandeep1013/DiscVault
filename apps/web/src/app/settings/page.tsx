@@ -61,12 +61,15 @@ export default function SettingsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ inviteCode: importCode.trim() }),
     });
-    const data = await res.json() as { ok?: boolean; error?: string };
-    if (data.ok) {
-      setImportStatus("ok");
-      setImportCode("");
-      const cfg = await fetch("/api/config").then((r) => r.json()) as ConfigDisplay;
-      setConfig(cfg);
+    const data = await res.json() as { ok?: boolean; serverConfig?: { guildId: string; vaultChannelIds: string[]; manifestChannelId: string }; error?: string };
+    if (data.ok && data.serverConfig) {
+      // Invite code gives channel IDs only — redirect to setup so user provides their own bot token
+      const params = new URLSearchParams({
+        guildId: data.serverConfig.guildId,
+        vaultChannelIds: data.serverConfig.vaultChannelIds.join(","),
+        manifestChannelId: data.serverConfig.manifestChannelId,
+      });
+      window.location.href = `/setup?${params}`;
     } else {
       setImportStatus("error");
       setImportError(data.error ?? "Unknown error");
@@ -111,7 +114,7 @@ export default function SettingsPage() {
               Share Invite Code
             </div>
             <p className="text-blueprint-muted text-xs mb-4">
-              Send this to friends. They paste it below to connect instantly — no Discord Developer Portal needed.
+              Send this to friends. It contains the <strong className="text-blueprint-cyanDim">server ID and channel IDs</strong> — they still create their own bot (Step 1–2 of setup) but the channel fields are pre-filled automatically. This is how everyone ends up on the <strong className="text-blueprint-cyanDim">same shared channels</strong> so all files are visible to everyone.
             </p>
             <button
               onClick={generateInvite}
@@ -143,7 +146,7 @@ export default function SettingsPage() {
             Join with Invite Code
           </div>
           <p className="text-blueprint-muted text-xs mb-4">
-            Paste a code from a friend to connect to their vault.
+            Paste a code from a friend. It pre-fills the channel IDs so you connect to the same shared vault — you still need to create and invite your own bot first (Steps 1–2).
           </p>
           <div className="flex gap-2">
             <input

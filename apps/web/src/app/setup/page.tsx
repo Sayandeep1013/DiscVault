@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 
 // Discord bot tokens encode the bot's client ID in their first segment (base64).
 // This lets us build the invite URL without asking the user to find it separately.
@@ -23,8 +24,9 @@ function buildInviteUrl(clientId: string): string {
   return `https://discord.com/oauth2/authorize?client_id=${clientId}&permissions=${perms}&scope=bot`;
 }
 
-export default function SetupPage() {
+function SetupContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [form, setForm] = useState({
     botToken: "",
@@ -32,6 +34,21 @@ export default function SetupPage() {
     vaultChannelIds: "",
     manifestChannelId: "",
   });
+
+  // Pre-fill channel fields when arriving from an invite code
+  useEffect(() => {
+    const guildId = searchParams.get("guildId");
+    const vaultChannelIds = searchParams.get("vaultChannelIds");
+    const manifestChannelId = searchParams.get("manifestChannelId");
+    if (guildId || vaultChannelIds || manifestChannelId) {
+      setForm((f) => ({
+        ...f,
+        guildId: guildId ?? f.guildId,
+        vaultChannelIds: vaultChannelIds ?? f.vaultChannelIds,
+        manifestChannelId: manifestChannelId ?? f.manifestChannelId,
+      }));
+    }
+  }, [searchParams]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -254,6 +271,11 @@ export default function SetupPage() {
 
         {/* ── Step 3: Channel IDs ── */}
         <StepPanel index={3} current={step} title="Connect Your Server">
+          {(form.guildId || form.vaultChannelIds || form.manifestChannelId) && (
+            <div className="border border-blueprint-cyan bg-blueprint-cyan/5 px-3 py-2 text-blueprint-cyan text-xs mb-3">
+              ✓ Channel IDs pre-filled from invite code — just verify they look right.
+            </div>
+          )}
           <div className="flex flex-col gap-4">
             <Field label="SERVER_ID (Guild ID)" placeholder="Right-click server name → Copy Server ID"
               value={form.guildId} onChange={set("guildId")} />
@@ -304,6 +326,14 @@ export default function SetupPage() {
 
       </main>
     </div>
+  );
+}
+
+export default function SetupPage() {
+  return (
+    <Suspense>
+      <SetupContent />
+    </Suspense>
   );
 }
 

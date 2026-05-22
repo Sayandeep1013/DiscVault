@@ -19,12 +19,11 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const body = await req.json() as Record<string, unknown>;
 
-  // Invite code import
+  // Invite code — returns channel config only (no bot token), caller fills their own token
   if (typeof body["inviteCode"] === "string") {
     try {
-      const config = decodeInvite(body["inviteCode"]);
-      await saveConfig(config);
-      return NextResponse.json({ ok: true });
+      const serverConfig = decodeInvite(body["inviteCode"]);
+      return NextResponse.json({ ok: true, serverConfig });
     } catch (err) {
       return NextResponse.json(
         { error: err instanceof Error ? err.message : "Invalid invite code" },
