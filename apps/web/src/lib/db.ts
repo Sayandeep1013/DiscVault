@@ -7,6 +7,8 @@ export interface BotConfig {
   id: string;
   userId: string;
   guildId: string;
+  guildName: string;
+  botUsername: string;
   vaultChannelIds: string[];
   manifestChannelId: string;
 }
@@ -90,6 +92,8 @@ async function db(): Promise<Pool> {
         id                    TEXT PRIMARY KEY,
         user_id               TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         guild_id              TEXT NOT NULL,
+        guild_name            TEXT NOT NULL DEFAULT '',
+        bot_username          TEXT NOT NULL DEFAULT '',
         bot_token_encrypted   TEXT NOT NULL,
         vault_channel_ids     TEXT NOT NULL,
         manifest_channel_id   TEXT NOT NULL,
@@ -115,6 +119,11 @@ async function db(): Promise<Pool> {
         chunk_sha256  TEXT,
         PRIMARY KEY (file_id, chunk_index)
       );
+    `));
+    // Add new columns to existing tables (safe on Neon — no-op if already present)
+    await withRetry(() => pool().query(`
+      ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS guild_name TEXT NOT NULL DEFAULT '';
+      ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS bot_username TEXT NOT NULL DEFAULT '';
     `));
     _ready = true;
   }
@@ -164,52 +173,91 @@ export async function saveBotConfig(
   encryptedToken: string,
   guildId: string,
   vaultChannelIds: string[],
-  manifestChannelId: string
+  manifestChannelId: string,
+  guildName = "",
+  botUsername = ""
 ): Promise<void> {
-  const id = `bc_${userId}`;
+  // ID: bc_{userId}_{guildId} — supports multiple servers per user.
+  // Legacy rows used bc_{userId}; those are migrated on first save.
+  const id = `bc_${userId}_${guildId}`;
   await (await db()).query(
-    `INSERT INTO bot_configs (id, user_id, guild_id, bot_token_encrypted, vault_channel_ids, manifest_channel_id, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO bot_configs (id, user_id, guild_id, guild_name, bot_username, bot_token_encrypted, vault_channel_ids, manifest_channel_id, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      ON CONFLICT(id) DO UPDATE SET
-       guild_id = EXCLUDED.guild_id,
+       guild_name = EXCLUDED.guild_name,
+       bot_username = EXCLUDED.bot_username,
        bot_token_encrypted = EXCLUDED.bot_token_encrypted,
        vault_channel_ids = EXCLUDED.vault_channel_ids,
        manifest_channel_id = EXCLUDED.manifest_channel_id`,
-    [id, userId, guildId, encryptedToken, JSON.stringify(vaultChannelIds), manifestChannelId, new Date().toISOString()]
+    [id, userId, guildId, guildName, botUsername, encryptedToken, JSON.stringify(vaultChannelIds), manifestChannelId, new Date().toISOString()]
   );
 }
 
-export async function getBotConfig(userId: string): Promise<BotConfig | null> {
-  const { rows } = await (await db()).query(
-    `SELECT * FROM bot_configs WHERE user_id = $1`,
-    [userId]
-  );
-  const row = rows[0] as {
-    id: string; user_id: string; guild_id: string;
-    bot_token_encrypted: string; vault_channel_ids: string; manifest_channel_id: string;
-  } | undefined;
-  if (!row) return null;
+type RawBotConfigRow = {
+  id: string; user_id: string; guild_id: string; guild_name: string; bot_username: string;
+  bot_token_encrypted: string; vault_channel_ids: string; manifest_channel_id: string;
+};
+
+function rowToBotConfig(row: RawBotConfigRow): BotConfig {
   return {
     id: row.id,
     userId: row.user_id,
     guildId: row.guild_id,
+    guildName: row.guild_name ?? "",
+    botUsername: row.bot_username ?? "",
     vaultChannelIds: JSON.parse(row.vault_channel_ids) as string[],
     manifestChannelId: row.manifest_channel_id,
   };
 }
 
-export async function getDecryptedBotToken(userId: string): Promise<string | null> {
+// Returns the first/any config for a user — used by auth context
+export async function getBotConfig(userId: string): Promise<BotConfig | null> {
   const { rows } = await (await db()).query(
-    `SELECT bot_token_encrypted FROM bot_configs WHERE user_id = $1`,
+    `SELECT * FROM bot_configs WHERE user_id = $1 ORDER BY created_at ASC LIMIT 1`,
     [userId]
   );
-  const row = rows[0] as { bot_token_encrypted: string } | undefined;
+  const row = rows[0] as RawBotConfigRow | undefined;
+  return row ? rowToBotConfig(row) : null;
+}
+
+// Returns ALL configs for a user (all connected servers)
+export async function getAllBotConfigs(userId: string): Promise<BotConfig[]> {
+  const { rows } = await (await db()).query(
+    `SELECT * FROM bot_configs WHERE user_id = $1 ORDER BY created_at ASC`,
+    [userId]
+  );
+  return (rows as RawBotConfigRow[]).map(rowToBotConfig);
+}
+
+export async function removeBotConfig(userId: string, guildId: string): Promise<void> {
+  // Handle both id formats: new bc_{userId}_{guildId} and legacy bc_{userId}
+  await (await db()).query(
+    `DELETE FROM bot_configs WHERE user_id = $1 AND guild_id = $2`,
+    [userId, guildId]
+  );
+}
+
+export async function getDecryptedBotToken(userId: string, guildId?: string): Promise<string | null> {
+  let row: { bot_token_encrypted: string } | undefined;
+  if (guildId) {
+    const { rows } = await (await db()).query(
+      `SELECT bot_token_encrypted FROM bot_configs WHERE user_id = $1 AND guild_id = $2`,
+      [userId, guildId]
+    );
+    row = rows[0] as typeof row;
+  } else {
+    const { rows } = await (await db()).query(
+      `SELECT bot_token_encrypted FROM bot_configs WHERE user_id = $1 ORDER BY created_at ASC LIMIT 1`,
+      [userId]
+    );
+    row = rows[0] as typeof row;
+  }
   if (!row) return null;
   return decryptToken(row.bot_token_encrypted);
 }
 
 export async function botConfigToDiscVaultConfig(botConfig: BotConfig): Promise<DiscVaultConfig> {
-  const token = await getDecryptedBotToken(botConfig.userId);
+  const token = await getDecryptedBotToken(botConfig.userId, botConfig.guildId);
   if (!token) throw new Error("Bot token not found");
   return {
     botToken: token,

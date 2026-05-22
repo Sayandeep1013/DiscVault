@@ -1,116 +1,131 @@
 import { NextRequest, NextResponse } from "next/server";
-import { resolveConfig } from "@/lib/config-resolver";
+import { getAuthContext } from "@/lib/auth";
+import { getAllBotConfigs, botConfigToDiscVaultConfig, type BotConfig } from "@/lib/db";
 import { createDiscordClient } from "@discvault/discord-adapter";
 import { parseManifest } from "@discvault/core";
 import type { Manifest } from "@discvault/core";
 import { Routes } from "discord-api-types/v10";
 
-// Cache keyed by manifestChannelId so different servers never pollute each other
-const channelCache = new Map<string, { manifests: Manifest[]; at: number }>();
+export interface ManifestWithServer extends Manifest {
+  _serverName: string;
+  _guildId: string;
+}
+
+// Cache per manifests channel ID
+const channelCache = new Map<string, { manifests: ManifestWithServer[]; at: number }>();
 const CACHE_TTL_MS = 60_000;
 
-export async function GET(req: NextRequest) {
-  const resolved = await resolveConfig(req);
-  if (!resolved) {
-    return NextResponse.json({ error: "Not configured — sign in and complete setup first." }, { status: 404 });
-  }
-  const { config } = resolved;
-  const cacheKey = config.manifestChannelId;
-
-  const hit = channelCache.get(cacheKey);
-  if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
-    return NextResponse.json({ files: hit.manifests, cached: true });
-  }
-
-  const rest = createDiscordClient({ botToken: config.botToken });
-  const manifests: Manifest[] = [];
+async function scanChannel(
+  botConfig: BotConfig,
+  guildName: string
+): Promise<{ manifests: ManifestWithServer[]; messagesScanned: number; errors: number }> {
+  const dvConfig = await botConfigToDiscVaultConfig(botConfig);
+  const rest = createDiscordClient({ botToken: dvConfig.botToken });
+  const manifests: ManifestWithServer[] = [];
   let messagesScanned = 0;
-  let parseErrors = 0;
-  let fetchErrors = 0;
+  let errors = 0;
 
-  try {
-    let before: string | undefined;
+  let before: string | undefined;
+  for (let page = 0; page < 50; page++) {
+    const params = new URLSearchParams({ limit: "100" });
+    if (before) params.set("before", before);
 
-    for (let page = 0; page < 50; page++) {
-      const params = new URLSearchParams({ limit: "100" });
-      if (before) params.set("before", before);
-
-      let messages: Array<{ id: string; attachments: Array<{ url: string; filename: string }> }>;
-      try {
-        messages = (await rest.get(Routes.channelMessages(config.manifestChannelId), {
-          query: params,
-        })) as typeof messages;
-      } catch (err) {
-        const status = (err as Record<string, unknown>)["status"];
-        console.error(`[files] channel read failed (status ${status}):`, err);
-        if (status === 403) {
-          return NextResponse.json({
-            error: "Bot cannot read the manifests channel. Make sure the bot has 'Read Message History' permission on that channel.",
-            files: [],
-          }, { status: 403 });
-        }
-        throw err;
-      }
-
-      if (messages.length === 0) break;
-      messagesScanned += messages.length;
-
-      for (const msg of messages) {
-        for (const att of msg.attachments) {
-          if (!att.filename.endsWith(".manifest.json")) continue;
-
-          try {
-            // 8-second timeout per CDN fetch — prevents one slow URL blocking the whole scan
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 8_000);
-            const res = await fetch(att.url, { signal: controller.signal });
-            clearTimeout(timeout);
-
-            if (!res.ok) {
-              console.error(`[files] CDN fetch failed for ${att.filename}: HTTP ${res.status}`);
-              fetchErrors++;
-              continue;
-            }
-
-            const raw = await res.json();
-            manifests.push(parseManifest(raw));
-          } catch (err) {
-            console.error(`[files] failed to load manifest ${att.filename}:`, err);
-            if ((err as Error).name === "AbortError") {
-              fetchErrors++;
-            } else {
-              parseErrors++;
-            }
-          }
-        }
-      }
-
-      before = messages[messages.length - 1]?.id;
+    let messages: Array<{ id: string; attachments: Array<{ url: string; filename: string }> }>;
+    try {
+      messages = (await rest.get(Routes.channelMessages(botConfig.manifestChannelId), {
+        query: params,
+      })) as typeof messages;
+    } catch (err) {
+      const status = (err as Record<string, unknown>)["status"];
+      console.error(`[files] channel ${botConfig.manifestChannelId} (${guildName}) read failed (${status}):`, err);
+      break;
     }
 
-    manifests.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    channelCache.set(cacheKey, { manifests, at: Date.now() });
+    if (messages.length === 0) break;
+    messagesScanned += messages.length;
 
-    console.log(`[files] scan complete on channel ${cacheKey}: ${messagesScanned} messages, ${manifests.length} manifests, ${parseErrors} parse errors, ${fetchErrors} fetch errors`);
-
-    return NextResponse.json({
-      files: manifests,
-      _scan: { messagesScanned, manifestsFound: manifests.length, parseErrors, fetchErrors },
-    });
-  } catch (err) {
-    console.error("[files] scan error:", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed to scan manifests channel", files: [] },
-      { status: 500 }
-    );
+    for (const msg of messages) {
+      for (const att of msg.attachments) {
+        if (!att.filename.endsWith(".manifest.json")) continue;
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 8_000);
+          const res = await fetch(att.url, { signal: controller.signal });
+          clearTimeout(timeout);
+          if (!res.ok) { errors++; continue; }
+          const raw = await res.json();
+          const m = parseManifest(raw) as ManifestWithServer;
+          m._serverName = guildName;
+          m._guildId = botConfig.guildId;
+          manifests.push(m);
+        } catch {
+          errors++;
+        }
+      }
+    }
+    before = messages[messages.length - 1]?.id;
   }
+
+  console.log(`[files] scan on channel ${botConfig.manifestChannelId} (${guildName}): ${messagesScanned} messages, ${manifests.length} manifests, ${errors} errors`);
+  return { manifests, messagesScanned, errors };
+}
+
+export async function GET(req: NextRequest) {
+  const ctx = await getAuthContext(req);
+  if (!ctx) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+
+  const allConfigs = await getAllBotConfigs(ctx.userId);
+  if (allConfigs.length === 0) {
+    return NextResponse.json({ error: "Not configured — complete setup first." }, { status: 404 });
+  }
+
+  const allManifests: ManifestWithServer[] = [];
+  let totalMessages = 0;
+  let totalErrors = 0;
+
+  for (const cfg of allConfigs) {
+    const guildName = cfg.guildName || cfg.guildId;
+    const cacheKey = cfg.manifestChannelId;
+    const hit = channelCache.get(cacheKey);
+
+    if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
+      allManifests.push(...hit.manifests);
+      continue;
+    }
+
+    try {
+      const { manifests, messagesScanned, errors } = await scanChannel(cfg, guildName);
+      channelCache.set(cacheKey, { manifests, at: Date.now() });
+      allManifests.push(...manifests);
+      totalMessages += messagesScanned;
+      totalErrors += errors;
+    } catch (err) {
+      console.error(`[files] scan failed for ${guildName}:`, err);
+      totalErrors++;
+    }
+  }
+
+  // Deduplicate by fileId (same file might appear in multiple servers somehow)
+  const seen = new Set<string>();
+  const deduped = allManifests.filter((m) => {
+    if (seen.has(m.fileId)) return false;
+    seen.add(m.fileId);
+    return true;
+  });
+
+  deduped.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  return NextResponse.json({
+    files: deduped,
+    _scan: { messagesScanned: totalMessages, manifestsFound: deduped.length, errors: totalErrors, servers: allConfigs.length },
+  });
 }
 
 export async function DELETE(req: NextRequest) {
-  // Bust cache for this user's channel only, or all if admin
-  const resolved = await resolveConfig(req);
-  if (resolved) {
-    channelCache.delete(resolved.config.manifestChannelId);
+  const ctx = await getAuthContext(req);
+  if (ctx) {
+    const configs = await getAllBotConfigs(ctx.userId);
+    for (const cfg of configs) channelCache.delete(cfg.manifestChannelId);
   } else {
     channelCache.clear();
   }

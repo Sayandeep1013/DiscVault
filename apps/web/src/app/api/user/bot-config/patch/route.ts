@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
-import { saveBotConfig, getBotConfig, getDecryptedBotToken } from "@/lib/db";
+import { saveBotConfig, getBotConfig, getDecryptedBotToken, getAllBotConfigs } from "@/lib/db";
 import { createDiscordClient } from "@discvault/discord-adapter";
 import { Routes } from "discord-api-types/v10";
 
@@ -55,12 +55,23 @@ export async function POST(req: NextRequest) {
   // Re-encrypt token (same token, just re-saving with new channels)
   const { encryptToken } = await import("@/lib/crypto");
   const encrypted = encryptToken(botToken);
+  // Fetch updated guild name
+  let guildName = existing.guildName;
+  const resolvedGuildId = typeof guildId === "string" && guildId.trim() ? guildId : existing.guildId;
+  try {
+    const restCheck = createDiscordClient({ botToken });
+    const guild = await restCheck.get(Routes.guild(resolvedGuildId)) as { name: string };
+    guildName = guild.name;
+  } catch { /* keep existing name if guild fetch fails */ }
+
   await saveBotConfig(
     ctx.userId,
     encrypted,
-    typeof guildId === "string" && guildId.trim() ? guildId : existing.guildId,
+    resolvedGuildId,
     vaultChannelIds as string[],
-    manifestChannelId
+    manifestChannelId,
+    guildName,
+    existing.botUsername
   );
 
   return NextResponse.json({ ok: true });

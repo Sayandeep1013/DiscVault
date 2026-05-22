@@ -5,7 +5,7 @@ import type { Manifest } from "@discvault/core";
 import { formatBytes, formatDate, fileIcon } from "@/lib/format";
 
 interface FileCardProps {
-  manifest: Manifest;
+  manifest: Manifest & { _serverName?: string };
 }
 
 export default function FileCard({ manifest }: FileCardProps) {
@@ -54,6 +54,11 @@ export default function FileCard({ manifest }: FileCardProps) {
         <span>{formatBytes(manifest.size)}</span>
         <span>{manifest.totalChunks} chunks</span>
         <span>{formatDate(manifest.createdAt)}</span>
+        {manifest._serverName && (
+          <span className="text-blueprint-cyanFaint border border-blueprint-cyanFaint px-1.5 py-0.5 text-xs" style={{ color: "#38bdf820", borderColor: "#1e3a5f" }}>
+            <span style={{ color: "#7dd3fc" }}>⬡ {manifest._serverName}</span>
+          </span>
+        )}
       </div>
 
       {/* File ID */}
