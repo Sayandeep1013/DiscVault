@@ -15,6 +15,7 @@ export default function LibraryPage() {
   const [showUpload, setShowUpload] = useState(false);
   const [search, setSearch] = useState("");
   const [notConfigured, setNotConfigured] = useState(false);
+  const [scanInfo, setScanInfo] = useState<{ messagesScanned: number; manifestsFound: number; parseErrors: number; fetchErrors: number } | null>(null);
 
   // Auth gate — redirect to /login if not signed in
   useEffect(() => {
@@ -38,9 +39,10 @@ export default function LibraryPage() {
       const res = await fetch("/api/files");
       if (res.status === 404) { setNotConfigured(true); setLoading(false); return; }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json() as { files: Manifest[]; error?: string };
+      const data = await res.json() as { files: Manifest[]; error?: string; _scan?: typeof scanInfo };
       if (data.error) throw new Error(data.error);
       setFiles(data.files);
+      if (data._scan) setScanInfo(data._scan);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -71,6 +73,14 @@ export default function LibraryPage() {
             {!loading && !error && (
               <p className="text-blueprint-muted text-xs mt-1">
                 {files.length} file{files.length !== 1 ? "s" : ""} stored across Discord
+                {scanInfo && scanInfo.messagesScanned > 0 && (
+                  <span className="ml-2 opacity-50">
+                    · scanned {scanInfo.messagesScanned} messages
+                    {(scanInfo.parseErrors + scanInfo.fetchErrors) > 0 && (
+                      <span className="text-yellow-500 ml-1">· {scanInfo.parseErrors + scanInfo.fetchErrors} failed to load</span>
+                    )}
+                  </span>
+                )}
               </p>
             )}
           </div>
@@ -121,26 +131,50 @@ export default function LibraryPage() {
 
         {/* Error */}
         {error && !notConfigured && (
-          <div className="blueprint-panel p-6 border-red-900">
-            <div className="text-red-400 text-xs">Error: {error}</div>
-            <button onClick={() => void fetchFiles()} className="mt-3 text-xs text-blueprint-muted hover:text-blueprint-cyan">
-              Retry
+          <div className="blueprint-panel p-6 border border-red-900">
+            <div className="text-red-400 text-xs font-bold mb-1">Failed to load files</div>
+            <div className="text-red-300 text-xs">{error}</div>
+            {error.includes("403") || error.includes("Read Message History") ? (
+              <div className="mt-2 text-yellow-400 text-xs">
+                Fix: Discord → manifests channel → Edit Channel → Permissions → enable ✓ Read Message History for your bot.
+              </div>
+            ) : null}
+            <button onClick={() => void fetchFiles(true)} className="mt-3 text-xs text-blueprint-muted hover:text-blueprint-cyan">
+              ↺ Retry
             </button>
           </div>
         )}
 
         {/* Empty */}
         {!loading && !error && !notConfigured && files.length === 0 && (
-          <div className="blueprint-panel p-12 text-center">
-            <div className="text-blueprint-muted text-xs uppercase tracking-widest mb-4">
-              No files in vault
+          <div className="blueprint-panel p-8 text-center flex flex-col gap-3">
+            <div className="text-blueprint-muted text-xs uppercase tracking-widest">
+              No files found in manifests channel
             </div>
-            <button
-              onClick={() => setShowUpload(true)}
-              className="px-6 py-2 border border-blueprint-cyan text-blueprint-cyan text-xs uppercase tracking-widest hover:bg-blueprint-cyan hover:text-blueprint-bg transition-colors"
-            >
-              ↑ Upload First File
-            </button>
+            {scanInfo && (
+              <div className="text-blueprint-muted text-xs opacity-60">
+                Scanned {scanInfo.messagesScanned} message{scanInfo.messagesScanned !== 1 ? "s" : ""}.
+                {scanInfo.messagesScanned === 0
+                  ? " The manifests channel appears to be empty."
+                  : scanInfo.parseErrors + scanInfo.fetchErrors > 0
+                  ? ` ${scanInfo.parseErrors + scanInfo.fetchErrors} manifest(s) failed to parse — check Render logs.`
+                  : " No .manifest.json files found in any messages."}
+              </div>
+            )}
+            <div className="flex gap-3 justify-center mt-2">
+              <button
+                onClick={() => setShowUpload(true)}
+                className="px-6 py-2 border border-blueprint-cyan text-blueprint-cyan text-xs uppercase tracking-widest hover:bg-blueprint-cyan hover:text-blueprint-bg transition-colors"
+              >
+                ↑ Upload First File
+              </button>
+              <button
+                onClick={() => void fetchFiles(true)}
+                className="px-4 py-2 border border-blueprint-border text-blueprint-muted text-xs uppercase tracking-widest hover:border-blueprint-cyan hover:text-blueprint-cyan transition-colors"
+              >
+                ↺ Rescan
+              </button>
+            </div>
           </div>
         )}
 
