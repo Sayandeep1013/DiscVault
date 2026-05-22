@@ -22,6 +22,13 @@ export default function SettingsPage() {
   const [copiedInvite, setCopiedInvite] = useState(false);
   const [loadingInvite, setLoadingInvite] = useState(false);
 
+  // Channel editing state
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({ vaultChannelIds: "", manifestChannelId: "", guildId: "" });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editOk, setEditOk] = useState(false);
+
   useEffect(() => {
     // Auth gate
     fetch("/api/auth/me")
@@ -91,10 +98,28 @@ export default function SettingsPage() {
 
         {/* Current Config */}
         <section className="blueprint-panel p-5">
-          <div className="text-blueprint-cyan text-xs uppercase tracking-widest font-bold mb-4 pb-2 border-b border-blueprint-border">
-            Current Configuration
+          <div className="flex items-center justify-between mb-4 pb-2 border-b border-blueprint-border">
+            <div className="text-blueprint-cyan text-xs uppercase tracking-widest font-bold">Current Configuration</div>
+            {config?.configured && !editing && (
+              <button
+                onClick={() => {
+                  setEditForm({
+                    guildId: config.guildId ?? "",
+                    vaultChannelIds: (config.vaultChannelIds ?? []).join(", "),
+                    manifestChannelId: config.manifestChannelId ?? "",
+                  });
+                  setEditError(null);
+                  setEditOk(false);
+                  setEditing(true);
+                }}
+                className="text-xs border border-blueprint-border text-blueprint-muted px-3 py-1 hover:border-blueprint-cyan hover:text-blueprint-cyan transition-colors"
+              >
+                ✎ Edit Channels
+              </button>
+            )}
           </div>
-          {config?.configured ? (
+
+          {config?.configured && !editing && (
             <div className="flex flex-col gap-2 text-xs font-mono">
               <Row label="STATUS" value="CONNECTED" highlight />
               <Row label="BOT_TOKEN" value={config.botTokenMasked ?? ""} />
@@ -102,7 +127,77 @@ export default function SettingsPage() {
               <Row label="VAULT_CHANNELS" value={(config.vaultChannelIds ?? []).join(", ")} />
               <Row label="MANIFEST_CH" value={config.manifestChannelId ?? ""} />
             </div>
-          ) : (
+          )}
+
+          {config?.configured && editing && (
+            <div className="flex flex-col gap-4">
+              <p className="text-blueprint-muted text-xs">
+                Update channel IDs without re-entering your bot token. Use this to fix mismatched channels.
+              </p>
+              <EditField
+                label="GUILD_ID"
+                value={editForm.guildId}
+                onChange={(v) => setEditForm((f) => ({ ...f, guildId: v }))}
+              />
+              <EditField
+                label="VAULT_CHANNEL_IDS (comma-separated)"
+                value={editForm.vaultChannelIds}
+                onChange={(v) => setEditForm((f) => ({ ...f, vaultChannelIds: v }))}
+              />
+              <EditField
+                label="MANIFEST_CHANNEL_ID"
+                value={editForm.manifestChannelId}
+                onChange={(v) => setEditForm((f) => ({ ...f, manifestChannelId: v }))}
+              />
+
+              {editError && <div className="text-red-400 text-xs border border-red-900 px-3 py-2">{editError}</div>}
+              {editOk && <div className="text-green-400 text-xs">✓ Channels updated successfully.</div>}
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setEditing(false); setEditError(null); setEditOk(false); }}
+                  className="px-4 py-2 border border-blueprint-border text-blueprint-muted text-xs hover:border-blueprint-cyan hover:text-blueprint-cyan transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled={editSaving}
+                  onClick={async () => {
+                    setEditSaving(true);
+                    setEditError(null);
+                    try {
+                      const ids = editForm.vaultChannelIds.split(",").map((s) => s.trim()).filter(Boolean);
+                      const res = await fetch("/api/user/bot-config/patch", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          guildId: editForm.guildId.trim(),
+                          vaultChannelIds: ids,
+                          manifestChannelId: editForm.manifestChannelId.trim(),
+                        }),
+                      });
+                      const data = await res.json() as { ok?: boolean; error?: string };
+                      if (!res.ok) throw new Error(data.error ?? "Save failed");
+                      setEditOk(true);
+                      setEditing(false);
+                      // Refresh config display
+                      const cfg = await fetch("/api/user/bot-config").then((r) => r.json()) as ConfigDisplay;
+                      setConfig(cfg);
+                    } catch (err) {
+                      setEditError(err instanceof Error ? err.message : String(err));
+                    } finally {
+                      setEditSaving(false);
+                    }
+                  }}
+                  className="flex-1 py-2 border border-blueprint-cyan text-blueprint-cyan text-xs uppercase tracking-widest hover:bg-blueprint-cyan hover:text-blueprint-bg transition-colors disabled:opacity-40"
+                >
+                  {editSaving ? "Validating & saving..." : "Save Channel Changes"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!config?.configured && (
             <div className="text-blueprint-muted text-xs">Not configured. Use an invite code below to connect.</div>
           )}
         </section>
@@ -186,6 +281,20 @@ function Row({ label, value, highlight }: { label: string; value: string; highli
     <div className="flex gap-3">
       <span className="text-blueprint-muted w-32 shrink-0">{label}</span>
       <span className={highlight ? "text-blueprint-cyan" : "text-blueprint-cyanDim"}>{value}</span>
+    </div>
+  );
+}
+
+function EditField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-blueprint-muted text-xs font-mono">{label}</label>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="bg-blueprint-bg border border-blueprint-border text-blueprint-cyanDim text-xs px-3 py-2 outline-none focus:border-blueprint-cyan font-mono"
+      />
     </div>
   );
 }
