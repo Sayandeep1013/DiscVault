@@ -91,7 +91,7 @@ export async function GET(req: NextRequest) {
     manifests.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     channelCache.set(cacheKey, { manifests, at: Date.now() });
 
-    console.log(`[files] scan complete: ${messagesScanned} messages, ${manifests.length} manifests, ${parseErrors} parse errors, ${fetchErrors} fetch errors`);
+    console.log(`[files] scan complete on channel ${cacheKey}: ${messagesScanned} messages, ${manifests.length} manifests, ${parseErrors} parse errors, ${fetchErrors} fetch errors`);
 
     return NextResponse.json({
       files: manifests,
